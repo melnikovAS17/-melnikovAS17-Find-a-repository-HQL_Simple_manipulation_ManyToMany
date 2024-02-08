@@ -3,66 +3,67 @@ package org.testHibernate;
 import org.hibernate.Session;
 import org.hibernate.SessionFactory;
 import org.hibernate.cfg.Configuration;
-import org.testHibernate.models.Principal;
-import org.testHibernate.models.School;
+import org.testHibernate.models.Actor;
+import org.testHibernate.models.Movie;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 
 
 public class App
 {
-    //OneToOne - создается так же с внешним ключом, только на ключ вешаем ограничение UNIQUE
+    //ManyToMany - создается отдельная таблица с колонками - ссылками на id наших сущностей
+    //у этой таблицы primary key(actor_id, movie_id) - составной
     public static void main( String[] args ){
-        Configuration configuration = new Configuration().addAnnotatedClass(Principal.class)
-                .addAnnotatedClass(School.class);
-        //Получение щколы у директора
-        try(SessionFactory sessionFactory = configuration.buildSessionFactory();
-            Session session = sessionFactory.getCurrentSession()){
+        Configuration configuration = new Configuration().addAnnotatedClass(Actor.class)
+                .addAnnotatedClass(Movie.class);
+        //Добавляем новых актёров и фильм
+        try (SessionFactory sessionFactory = configuration.buildSessionFactory();){
+            Session session = sessionFactory.getCurrentSession();
+            session.beginTransaction();
+            Movie movie = new Movie("Parado su net");
+            Actor actor = new Actor("Tomas");
+            Actor actor1 = new Actor("Bear");
+
+            //List.of() - изменяемый но не расширяемый (9 - version Java)
+            movie.setActorList(new ArrayList<>(Arrays.asList(actor,actor1)));
+            //Устанавливаем связь с обеих сторон
+            actor.setMovieList(new ArrayList<>(Collections.singletonList(movie)));
+            actor1.setMovieList(new ArrayList<>(Collections.singletonList(movie)));
+            //Каскадирование не настроено на стороне hibernate для метода SAVE_UPDATE
+            session.save(movie);
+            session.save(actor);
+            session.save(actor1);
+
+            session.getTransaction().commit();
+        }
+        //Добавляем фильм уже сущ-му актёру
+        try (SessionFactory sessionFactory = configuration.buildSessionFactory();){
+            Session session = sessionFactory.getCurrentSession();
             session.beginTransaction();
 
-           Principal principal = session.get(Principal.class,1);
-            System.out.println(principal.getSchool().getNumber());
+            Actor actor = session.get(Actor.class,1);
+            Movie movie = new Movie("Mups");
+            actor.getMovieList().add(movie);
+            movie.setActorList(new ArrayList<>(Collections.singletonList(actor)));
+            session.save(movie);
 
 
             session.getTransaction().commit();
         }
-        //Создание нового директора и школы со связыванием этих сущностей
-        try(SessionFactory sessionFactory = configuration.buildSessionFactory();
-            Session session = sessionFactory.getCurrentSession()){
-            session.beginTransaction();
-            Principal principal = new Principal("Pool",45);
-            //У объекта Owning side - School (в данном случае) в конструкторе с парам-ми указываем об-т Principal
-            //А у Principal нет
-            School school = new School(12341,principal);
-            //Для правильного кеша Hibernate связь уст-м с двух сторон
-            //Для автоматизации данного процесса можно в методе setPrincipal у School вызывать метод
-            //principal.setSchool(this)
-            principal.setSchool(school);
-            session.save(principal);
-
-            session.getTransaction().commit();
-        }
-        //Меняем директора у сущ-й школы
-        try(SessionFactory sessionFactory = configuration.buildSessionFactory();
-            Session session = sessionFactory.getCurrentSession()){
+        //Удаляем фильм у какого-то актёра
+        try (SessionFactory sessionFactory = configuration.buildSessionFactory();){
+            Session session = sessionFactory.getCurrentSession();
             session.beginTransaction();
 
-            School school = session.get(School.class,2);
-            Principal principal = new Principal("Yappk", 33);
-            session.save(principal);
-            school.setPrincipal(principal);
-            principal.setSchool(school);
-
-            session.getTransaction().commit();
-        }
-        //Пробуем добавить вторую школу для существующего директора
-        //ОШИБКА повторяющееся значение ключа нарушает ограничение уникальности "school_principal_id_key"
-        try(SessionFactory sessionFactory = configuration.buildSessionFactory();
-            Session session = sessionFactory.getCurrentSession()){
-            session.beginTransaction();
-
-            Principal principal = session.get(Principal.class,3);
-            School school = new School(1111,principal);
-            session.save(school);
-            principal.setSchool(school);
+            Actor actor = session.get(Actor.class,1);
+            Movie movie = session.get(Movie.class,1);
+            //Чтобы удалять об-ты из коллекций не по индексу, а по значению полей необходимо реалтизовать в наших
+            //классах методы equals и hashcode
+            actor.getMovieList().remove(movie);
+            movie.getActorList().remove(actor);
 
             session.getTransaction().commit();
         }
